@@ -1,17 +1,13 @@
 use std::{
-    collections::HashMap,
-    env::current_dir,
-    error::Error,
-    fs::{self, File, OpenOptions},
-    io::{BufRead, BufReader},
+    cell::RefCell, collections::{HashMap, VecDeque}, env::current_dir, error::Error, fs::{self, File, OpenOptions}, io::{BufRead, BufReader, BufWriter, Write}, rc::Rc
 };
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Hash, Eq, PartialEq, Debug, Clone, Deserialize)]
+#[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct Account(pub String);
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Tx {
     pub from: Account,
     pub to: Account,
@@ -23,11 +19,20 @@ impl Tx {
     pub fn is_reward(&self) -> bool {
         self.data == "reward".to_string()
     }
+
+    pub fn new(from: String, to: String, value: u64, data: String ) -> Tx {
+        Self{
+            from: Account(from),
+            to: Account(to),
+            value,
+            data
+        }
+    }
 }
 
 pub struct State {
     pub balances: HashMap<Account, u64>,
-    pub tx_mempool: Vec<Tx>,
+    pub tx_mempool: Rc<RefCell<VecDeque<Tx>>>,
     pub db_file: File,
 }
 
@@ -41,12 +46,12 @@ pub struct Genesis {
 impl State {
     pub fn add(&mut self, tx: Tx) {
         self.apply(&tx).unwrap();
-        self.tx_mempool.push(tx);
+        self.tx_mempool.borrow_mut().push_back(tx);
     }
 
     pub fn apply(&mut self, tx: &Tx) -> Result<(), String> {
         if tx.is_reward() {
-            println!("is_reward_yes");
+            // println!("is_reward_yes");
             *self.balances.entry(tx.to.clone()).or_insert(0) += tx.value;
         }
 
@@ -57,7 +62,6 @@ impl State {
 
         //Effect change
         *self.balances.get_mut(&tx.from).unwrap() -= tx.value; //handle error here, if the account does not exist, throw Error
-        // let vall = *self.balances.get_mut(&tx.from).unwrap();
 
         //If the 'to' account does not exist, create it with initial balance 0
         if (!self.balances.contains_key(&tx.to)){
@@ -103,7 +107,7 @@ impl State {
         //initialize state
         let mut state = State {
             balances,
-            tx_mempool: Vec::new(),
+            tx_mempool: Rc::new(RefCell::new(VecDeque::new())),
             db_file: file,
         };
 
@@ -118,7 +122,16 @@ impl State {
         Ok(state)
     }
     
-    pub fn persist(){
+    /// ADD/FLUSH TO DISK
+    pub fn persist(&mut self){
+        // let mempool = Rc::clone(&self.tx_mempool);
+        let mut mempool = self.tx_mempool.borrow_mut();
+        let mut writer = BufWriter::new(&self.db_file);
 
+        while let Some(tx ) = mempool.pop_front(){
+            let tx_json = serde_json::to_string(&tx).unwrap();
+            writeln!(writer, "{}", tx_json).unwrap();
+        };
+        writer.flush().unwrap();
     }
 }
