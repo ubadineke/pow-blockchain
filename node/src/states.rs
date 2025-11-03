@@ -1,8 +1,15 @@
 use std::{
-    cell::RefCell, collections::{HashMap, VecDeque}, env::current_dir, error::Error, fs::{self, File, OpenOptions}, io::{BufRead, BufReader, BufWriter, Write}, rc::Rc
+    cell::RefCell,
+    collections::{HashMap, VecDeque},
+    env::current_dir,
+    error::Error,
+    fs::{self, File, OpenOptions},
+    io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write},
+    rc::Rc,
 };
 
 use serde::{Deserialize, Serialize};
+use sha256::digest;
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct Account(pub String);
@@ -20,12 +27,12 @@ impl Tx {
         self.data == "reward".to_string()
     }
 
-    pub fn new(from: String, to: String, value: u64, data: String ) -> Tx {
-        Self{
+    pub fn new(from: String, to: String, value: u64, data: String) -> Tx {
+        Self {
             from: Account(from),
             to: Account(to),
             value,
-            data
+            data,
         }
     }
 }
@@ -34,6 +41,7 @@ pub struct State {
     pub balances: HashMap<Account, u64>,
     pub tx_mempool: Rc<RefCell<VecDeque<Tx>>>,
     pub db_file: File,
+    pub snapshot: String, //change to 32 byte array later
 }
 
 #[derive(Deserialize)]
@@ -64,10 +72,10 @@ impl State {
         *self.balances.get_mut(&tx.from).unwrap() -= tx.value; //handle error here, if the account does not exist, throw Error
 
         //If the 'to' account does not exist, create it with initial balance 0
-        if (!self.balances.contains_key(&tx.to)){
+        if (!self.balances.contains_key(&tx.to)) {
             self.balances.insert(tx.to.clone(), 0);
         }
-        
+
         //Effect change
         *self.balances.get_mut(&tx.to).unwrap() += tx.value; //handle error here, if the account does not exist, throw Error
 
@@ -109,6 +117,7 @@ impl State {
             balances,
             tx_mempool: Rc::new(RefCell::new(VecDeque::new())),
             db_file: file,
+            snapshot: String::new(),
         };
 
         for line_result in reader.lines() {
@@ -121,17 +130,36 @@ impl State {
 
         Ok(state)
     }
-    
-    /// ADD/FLUSH TO DISK
-    pub fn persist(&mut self){
-        // let mempool = Rc::clone(&self.tx_mempool);
-        let mut mempool = self.tx_mempool.borrow_mut();
-        let mut writer = BufWriter::new(&self.db_file);
 
-        while let Some(tx ) = mempool.pop_front(){
-            let tx_json = serde_json::to_string(&tx).unwrap();
-            writeln!(writer, "{}", tx_json).unwrap();
-        };
-        writer.flush().unwrap();
+    /// ADD/FLUSH TO DISK
+    pub fn persist(&mut self) -> &String {
+        //Add in this block, so the memory is freed from the **borrow_mut** and can be used forward in **self.snapshot**
+        {
+            let mut mempool = self.tx_mempool.borrow_mut();
+            let mut writer = BufWriter::new(&self.db_file);
+
+            while let Some(tx) = mempool.pop_front() {
+                let tx_json = serde_json::to_string(&tx).unwrap();
+                writeln!(writer, "{}", tx_json).unwrap();
+            }
+            writer.flush().unwrap();
+        }
+        //Process snapshot
+        self.snapshot();
+        println!("New DB Snapshot: {}", self.snapshot);
+        &self.snapshot
+    }
+
+    // Create a snapshot by hashing
+    pub fn snapshot(&mut self) {
+        let mut file_clone = &self.db_file;
+        file_clone.seek(SeekFrom::Start(0)).unwrap();
+
+        let mut reader = BufReader::new(file_clone);
+        let mut string = String::new();
+        reader.read_to_string(&mut string).unwrap();
+
+        let snapshot = digest(&string);
+        self.snapshot = snapshot;
     }
 }

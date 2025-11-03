@@ -23,7 +23,7 @@ enum Commands {
     Tx {
         #[command(subcommand)]
         command: TxCommands,
-    }
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -35,11 +35,11 @@ pub enum BalancesCommands {
 #[derive(Debug, Subcommand)]
 pub enum TxCommands {
     #[command(about = "add transactions")]
-    Add(AddArgs)
+    Add(AddArgs),
 }
 
 #[derive(Parser, Debug)]
-pub struct AddArgs{
+pub struct AddArgs {
     #[arg(long, help = "From what account to send tokens")]
     from: String,
 
@@ -50,8 +50,7 @@ pub struct AddArgs{
     value: u64,
 
     #[arg(long, help = "Is this a reward transaction")]
-    data: Option<String>
-
+    data: Option<String>,
 }
 
 fn main() {
@@ -59,6 +58,6 @@ fn main() {
 
     match cli.command {
         Commands::Balances { command } => manage_balances(command),
-        Commands::Tx { command } => manage_txs(command,),
+        Commands::Tx { command } => manage_txs(command),
     }
 }
