@@ -9,7 +9,8 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use sha256::digest;
+use sha2::{Sha256, Digest};
+
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct Account(pub String);
@@ -37,17 +38,31 @@ impl Tx {
     }
 }
 
+#[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
+pub struct Hash(pub [u8; 32]);
+
+impl AsRef<[u8]> for Hash{
+    fn as_ref(&self) -> &[u8] {
+        &self.0 
+    }
+}
+
+impl From<[u8; 32]> for Hash{
+    fn from(value: [u8; 32]) -> Self {
+        Hash(value)
+    }
+}
 pub struct State {
     pub balances: HashMap<Account, u64>,
     pub tx_mempool: Rc<RefCell<VecDeque<Tx>>>,
     pub db_file: File,
-    pub snapshot: String, //change to 32 byte array later
+    pub snapshot: Hash, //change to 32 byte array later
 }
 
 #[derive(Deserialize)]
 pub struct Genesis {
-    genesis_time: String,
-    chain_id: String,
+    // genesis_time: String,
+    // chain_id: String,
     balances: HashMap<String, u64>,
 }
 
@@ -72,7 +87,7 @@ impl State {
         *self.balances.get_mut(&tx.from).unwrap() -= tx.value; //handle error here, if the account does not exist, throw Error
 
         //If the 'to' account does not exist, create it with initial balance 0
-        if (!self.balances.contains_key(&tx.to)) {
+        if !self.balances.contains_key(&tx.to){
             self.balances.insert(tx.to.clone(), 0);
         }
 
@@ -117,7 +132,7 @@ impl State {
             balances,
             tx_mempool: Rc::new(RefCell::new(VecDeque::new())),
             db_file: file,
-            snapshot: String::new(),
+            snapshot: Hash::from([0u8; 32]),
         };
 
         for line_result in reader.lines() {
@@ -132,7 +147,7 @@ impl State {
     }
 
     /// ADD/FLUSH TO DISK
-    pub fn persist(&mut self) -> &String {
+    pub fn persist(&mut self) -> &Hash {
         //Add in this block, so the memory is freed from the **borrow_mut** and can be used forward in **self.snapshot**
         {
             let mut mempool = self.tx_mempool.borrow_mut();
@@ -146,7 +161,7 @@ impl State {
         }
         //Process snapshot
         self.snapshot();
-        println!("New DB Snapshot: {}", self.snapshot);
+        println!("New DB Snapshot: {}", self.snapshot_to_hex());
         &self.snapshot
     }
 
@@ -159,7 +174,23 @@ impl State {
         let mut string = String::new();
         reader.read_to_string(&mut string).unwrap();
 
-        let snapshot = digest(&string);
-        self.snapshot = snapshot;
+        // let snapshot = digest(&string);
+        let snapshot = State::compute_hash(&string.as_bytes());
+        self.snapshot = Hash(snapshot);
+    }
+
+    pub fn snapshot_to_hex(&self) -> String{
+        hex::encode(&self.snapshot)
+    }
+
+    pub fn hex_to_hash(hex_str: &str) -> [u8; 32] {
+        let bytes = hex::decode(hex_str).expect("Invalid hex");
+        bytes.try_into().expect("Wrong length")
+    }
+
+    fn compute_hash(data: &[u8]) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(data);
+        hasher.finalize().into() 
     }
 }
