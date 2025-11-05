@@ -4,18 +4,18 @@ use std::{
     env::current_dir,
     error::Error,
     fs::{self, File, OpenOptions},
-    io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write},
+    io::{BufRead, BufReader, BufWriter, Write},
     rc::Rc,
 };
 
 use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
 
+use crate::block::{Block, BlockRecord};
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct Account(pub String);
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Tx {
     pub from: Account,
     pub to: Account,
@@ -38,32 +38,57 @@ impl Tx {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Copy, Clone, Debug)]
 pub struct Hash(pub [u8; 32]);
 
-impl AsRef<[u8]> for Hash{
+impl AsRef<[u8]> for Hash {
     fn as_ref(&self) -> &[u8] {
-        &self.0 
+        &self.0
     }
 }
 
-impl From<[u8; 32]> for Hash{
+impl From<[u8; 32]> for Hash {
     fn from(value: [u8; 32]) -> Self {
         Hash(value)
+    }
+}
+
+impl Hash {
+    pub fn to_hex(&self) -> String {
+        hex::encode(&self.0)
     }
 }
 pub struct State {
     pub balances: HashMap<Account, u64>,
     pub tx_mempool: Rc<RefCell<VecDeque<Tx>>>,
     pub db_file: File,
-    pub snapshot: Hash, //change to 32 byte array later
+    pub latest_blockhash: Hash,
 }
 
 #[derive(Deserialize)]
 pub struct Genesis {
-    // genesis_time: String,
-    // chain_id: String,
-    balances: HashMap<String, u64>,
+    pub genesis_time: String,
+    pub chain_id: String,
+    pub balances: HashMap<String, u64>,
+}
+
+impl Genesis {
+    pub fn new() -> Self {
+        let cwd = current_dir().expect("Failed to get current directory");
+        let gen_file_path = cwd.join("database").join("genesis.json");
+        let gen_data = fs::read_to_string(gen_file_path).unwrap();
+
+        let Genesis {
+            genesis_time,
+            chain_id,
+            balances,
+        } = serde_json::from_str(&gen_data).unwrap();
+        Self {
+            genesis_time,
+            chain_id,
+            balances,
+        }
+    }
 }
 
 impl State {
@@ -87,7 +112,7 @@ impl State {
         *self.balances.get_mut(&tx.from).unwrap() -= tx.value; //handle error here, if the account does not exist, throw Error
 
         //If the 'to' account does not exist, create it with initial balance 0
-        if !self.balances.contains_key(&tx.to){
+        if !self.balances.contains_key(&tx.to) {
             self.balances.insert(tx.to.clone(), 0);
         }
 
@@ -105,9 +130,8 @@ impl State {
         //get current working directory
         let cwd = current_dir().expect("Failed to get current directory");
         let gen_file_path = cwd.join("database").join("genesis.json");
-
+        
         let gen_data = fs::read_to_string(gen_file_path)?;
-        // println!("{}", gen_data);
         let genesis: Genesis = serde_json::from_str(&gen_data)?;
 
         let mut balances: HashMap<Account, u64> = HashMap::new();
@@ -116,71 +140,60 @@ impl State {
             // println!("{}, {}", key, value);
             balances.insert(Account(key), value);
         }
-
+        
         let tx_db_file_path = current_dir()
-            .expect("Failed to get current directory")
-            .join("database")
-            .join("tx.db");
-        let file = OpenOptions::new()
-            .read(true)
-            .append(true)
-            .open(tx_db_file_path)?;
-        let reader = BufReader::new(file.try_clone()?);
+        .expect("Failed to get current directory")
+        .join("database")
+        // .join("tx.db"); -> MIGRATED
+        .join("blocks.db");
+    let file = OpenOptions::new()
+    .read(true)
+    .append(true)
+    .open(tx_db_file_path)?;
+let reader = BufReader::new(file.try_clone()?);
 
-        //initialize state
-        let mut state = State {
+//initialize state
+let mut state = State {
             balances,
             tx_mempool: Rc::new(RefCell::new(VecDeque::new())),
             db_file: file,
-            snapshot: Hash::from([0u8; 32]),
+            latest_blockhash: Hash::from([0u8; 32]),
         };
-
+        
         for line_result in reader.lines() {
-            let line = line_result?;
-            let tx: Tx = serde_json::from_str(&line)?;
-
+            let line = line_result.unwrap();
+            let block_record: BlockRecord = serde_json::from_str(&line).unwrap();
             //Apply transaction to rebuild the balances
-            state.apply(&tx)?;
+            for tx in &block_record.block.txs{
+                state.apply(&tx)?;
+            }
         }
 
         Ok(state)
     }
 
     /// ADD/FLUSH TO DISK
-    pub fn persist(&mut self) -> &Hash {
-        //Add in this block, so the memory is freed from the **borrow_mut** and can be used forward in **self.snapshot**
-        {
-            let mut mempool = self.tx_mempool.borrow_mut();
-            let mut writer = BufWriter::new(&self.db_file);
+    pub fn persist(&mut self) -> Hash {
+        let block = Block::new(self.latest_blockhash, self.tx_mempool.borrow().clone());
+        let blockhash = block.hash();
 
-            while let Some(tx) = mempool.pop_front() {
-                let tx_json = serde_json::to_string(&tx).unwrap();
-                writeln!(writer, "{}", tx_json).unwrap();
-            }
-            writer.flush().unwrap();
-        }
-        //Process snapshot
-        self.snapshot();
-        println!("New DB Snapshot: {}", self.snapshot_to_hex());
-        &self.snapshot
+        let block_record = BlockRecord {
+            blockhash: blockhash.to_hex(),
+            block,
+        };
+        let block_json = serde_json::to_string(&block_record).unwrap();
+
+        let mut writer = BufWriter::new(&self.db_file);
+        writeln!(writer, "{}", block_json).unwrap();
+
+        self.latest_blockhash = blockhash;
+        self.tx_mempool = Rc::new(RefCell::new(VecDeque::new()));
+
+        blockhash
     }
 
-    // Create a snapshot by hashing
-    pub fn snapshot(&mut self) {
-        let mut file_clone = &self.db_file;
-        file_clone.seek(SeekFrom::Start(0)).unwrap();
-
-        let mut reader = BufReader::new(file_clone);
-        let mut string = String::new();
-        reader.read_to_string(&mut string).unwrap();
-
-        // let snapshot = digest(&string);
-        let snapshot = State::compute_hash(&string.as_bytes());
-        self.snapshot = Hash(snapshot);
-    }
-
-    pub fn snapshot_to_hex(&self) -> String{
-        hex::encode(&self.snapshot)
+    pub fn hash_to_hex(&self) -> String {
+        hex::encode(&self.latest_blockhash)
     }
 
     pub fn hex_to_hash(hex_str: &str) -> [u8; 32] {
@@ -188,9 +201,9 @@ impl State {
         bytes.try_into().expect("Wrong length")
     }
 
-    fn compute_hash(data: &[u8]) -> [u8; 32] {
-        let mut hasher = Sha256::new();
-        hasher.update(data);
-        hasher.finalize().into() 
+    pub fn add_block(&mut self, block: Block) {
+        for tx in block.txs {
+            self.add(tx);
+        }
     }
 }

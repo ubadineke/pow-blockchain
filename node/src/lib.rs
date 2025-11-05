@@ -1,7 +1,3 @@
 pub use states::*;
+pub mod block;
 pub mod states;
-
-fn main() {
-    println!("Hello, world!");
-    State::new_from_disk().unwrap();
-}
