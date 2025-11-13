@@ -1,9 +1,10 @@
 use node::{State, Tx};
 
-use crate::{AddArgs, TxCommands};
-pub fn manage_txs(command: TxCommands) {
+use crate::{AddArgs, TxSubcommand};
+
+pub fn manage_txs(command: TxSubcommand) {
     match command {
-        TxCommands::Add(args) => {
+        TxSubcommand::Add(args) => {
             let AddArgs {
                 from,
                 to,

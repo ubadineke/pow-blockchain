@@ -75,7 +75,7 @@ pub struct Genesis {
 impl Genesis {
     pub fn new() -> Self {
         let cwd = current_dir().expect("Failed to get current directory");
-        let gen_file_path = cwd.join("database").join("genesis.json");
+        let gen_file_path = cwd.join("database/src/genesis.json");
         let gen_data = fs::read_to_string(gen_file_path).unwrap();
 
         let Genesis {
@@ -93,11 +93,11 @@ impl Genesis {
 
 impl State {
     pub fn add(&mut self, tx: Tx) {
-        self.apply(&tx).unwrap();
+        self.apply(&tx, self.latest_blockhash).unwrap();
         self.tx_mempool.borrow_mut().push_back(tx);
     }
 
-    pub fn apply(&mut self, tx: &Tx) -> Result<(), String> {
+    pub fn apply(&mut self, tx: &Tx, block_hash: Hash) -> Result<(), String> {
         if tx.is_reward() {
             // println!("is_reward_yes");
             *self.balances.entry(tx.to.clone()).or_insert(0) += tx.value;
@@ -119,18 +119,15 @@ impl State {
         //Effect change
         *self.balances.get_mut(&tx.to).unwrap() += tx.value; //handle error here, if the account does not exist, throw Error
 
-        // for (key, value) in &self.balances {
-        //     // println!("Checking things{:?}, {}", key, value);
-        //     balances.insert(Account(key), value);
-        // }
+        self.latest_blockhash = block_hash;
         Ok(())
     }
 
     pub fn new_from_disk() -> Result<State, Box<dyn Error>> {
         //get current working directory
         let cwd = current_dir().expect("Failed to get current directory");
-        let gen_file_path = cwd.join("database").join("genesis.json");
-        
+        let gen_file_path = cwd.join("database/src/genesis.json");
+
         let gen_data = fs::read_to_string(gen_file_path)?;
         let genesis: Genesis = serde_json::from_str(&gen_data)?;
 
@@ -140,32 +137,30 @@ impl State {
             // println!("{}, {}", key, value);
             balances.insert(Account(key), value);
         }
-        
-        let tx_db_file_path = current_dir()
-        .expect("Failed to get current directory")
-        .join("database")
-        // .join("tx.db"); -> MIGRATED
-        .join("blocks.db");
-    let file = OpenOptions::new()
-    .read(true)
-    .append(true)
-    .open(tx_db_file_path)?;
-let reader = BufReader::new(file.try_clone()?);
 
-//initialize state
-let mut state = State {
+        let tx_db_file_path = current_dir()
+            .expect("Failed to get current directory")
+            .join("database/src/blocks.db");
+        let file = OpenOptions::new()
+            .read(true)
+            .append(true)
+            .open(tx_db_file_path)?;
+        let reader = BufReader::new(file.try_clone()?);
+
+        //initialize state
+        let mut state = State {
             balances,
             tx_mempool: Rc::new(RefCell::new(VecDeque::new())),
             db_file: file,
             latest_blockhash: Hash::from([0u8; 32]),
         };
-        
+
         for line_result in reader.lines() {
             let line = line_result.unwrap();
             let block_record: BlockRecord = serde_json::from_str(&line).unwrap();
             //Apply transaction to rebuild the balances
-            for tx in &block_record.block.txs{
-                state.apply(&tx)?;
+            for tx in &block_record.block.txs {
+                state.apply(&tx, State::hex_to_hash(&block_record.blockhash))?;
             }
         }
 
@@ -196,9 +191,10 @@ let mut state = State {
         hex::encode(&self.latest_blockhash)
     }
 
-    pub fn hex_to_hash(hex_str: &str) -> [u8; 32] {
+    pub fn hex_to_hash(hex_str: &str) -> Hash {
         let bytes = hex::decode(hex_str).expect("Invalid hex");
-        bytes.try_into().expect("Wrong length")
+        let arr: [u8; 32] = bytes.as_slice().try_into().expect("Expected 32 bytes");
+        Hash(arr)
     }
 
     pub fn add_block(&mut self, block: Block) {

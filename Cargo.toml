@@ -1,9 +1,2 @@
-# [package]
-# name = "pow-blockchain"
-# version = "0.1.0"
-# edition = "2024"
-
 [workspace]
-members = ["node", "cli"]
-
-
+members = ["node", "cli", "database"]

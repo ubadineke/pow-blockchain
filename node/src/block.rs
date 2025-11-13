@@ -17,13 +17,13 @@ pub struct BlockHeader {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Block {
     pub header: BlockHeader,
-    #[serde(rename = "payload")] 
+    #[serde(rename = "payload")]
     pub txs: VecDeque<Tx>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BlockRecord {
-  #[serde(rename = "hash")]
+    #[serde(rename = "hash")]
     pub blockhash: String,
     pub block: Block,
 }

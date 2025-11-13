@@ -1,5 +1,5 @@
 use balances::manage_balances;
-use clap::{Parser, Subcommand, command};
+use clap::{Parser, Subcommand};
 use tx::manage_txs;
 pub mod balances;
 pub mod tx;
@@ -14,43 +14,44 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    #[command(about = "Manage balances")]
+    /// Manage balances
     Balances {
         #[command(subcommand)]
-        command: BalancesCommands,
+        command: BalancesSubcommand,
     },
-    #[command(about = "Manage transactions")]
+
+    /// Manage transactions
     Tx {
         #[command(subcommand)]
-        command: TxCommands,
+        command: TxSubcommand,
     },
 }
 
-#[derive(Debug, Subcommand)]
-pub enum BalancesCommands {
-    #[command(about = "list account balances")]
+#[derive(Subcommand, Debug)]
+pub enum BalancesSubcommand {
+    /// List account balances
     List,
 }
 
-#[derive(Debug, Subcommand)]
-pub enum TxCommands {
-    #[command(about = "add transactions")]
+#[derive(Subcommand, Debug)]
+pub enum TxSubcommand {
+    /// Add transactions
     Add(AddArgs),
 }
 
 #[derive(Parser, Debug)]
 pub struct AddArgs {
     #[arg(long, help = "From what account to send tokens")]
-    from: String,
+    pub from: String,
 
     #[arg(long, help = "To what account to send tokens")]
-    to: String,
+    pub to: String,
 
     #[arg(long, help = "How many tokens to send")]
-    value: u64,
+    pub value: u64,
 
-    #[arg(long, help = "Is this a reward transaction")]
-    data: Option<String>,
+    #[arg(long, help = "Additional transaction data")]
+    pub data: Option<String>,
 }
 
 fn main() {

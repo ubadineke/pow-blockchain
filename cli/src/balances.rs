@@ -1,9 +1,9 @@
 use node::State;
 
-use crate::BalancesCommands;
-pub fn manage_balances(command: BalancesCommands) {
+use crate::BalancesSubcommand;
+pub fn manage_balances(command: BalancesSubcommand) {
     match command {
-        BalancesCommands::List => {
+        BalancesSubcommand::List => {
             let state = State::new_from_disk().unwrap();
             println!("Account balances at {} \n", state.latest_blockhash.to_hex());
             println!("BALANCES:");
