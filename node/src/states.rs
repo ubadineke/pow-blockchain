@@ -2,7 +2,6 @@ use std::{
     cell::RefCell,
     collections::{HashMap, VecDeque},
     env::current_dir,
-    error::Error,
     fs::{self, File, OpenOptions},
     io::{BufRead, BufReader, BufWriter, Write},
     rc::Rc,
@@ -10,7 +9,10 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::block::{Block, BlockRecord};
+use crate::{
+    block::{Block, BlockRecord},
+    error::{GenesisError, StateError},
+};
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct Account(pub String);
@@ -73,59 +75,57 @@ pub struct Genesis {
 }
 
 impl Genesis {
-    pub fn new() -> Self {
-        let cwd = current_dir().expect("Failed to get current directory");
+    pub fn new() -> Result<Self, GenesisError> {
+        let cwd = current_dir()?;
         let gen_file_path = cwd.join("database/src/genesis.json");
-        let gen_data = fs::read_to_string(gen_file_path).unwrap();
+        let gen_data = fs::read_to_string(gen_file_path)?;
 
-        let Genesis {
-            genesis_time,
-            chain_id,
-            balances,
-        } = serde_json::from_str(&gen_data).unwrap();
-        Self {
-            genesis_time,
-            chain_id,
-            balances,
-        }
+        let genesis: Genesis = serde_json::from_str(&gen_data)?;
+        Ok(genesis)
     }
 }
 
 impl State {
-    pub fn add(&mut self, tx: Tx) {
-        self.apply(&tx, self.latest_blockhash).unwrap();
+    pub fn add(&mut self, tx: Tx) -> Result<(), StateError> {
+        self.apply(&tx, self.latest_blockhash)?;
         self.tx_mempool.borrow_mut().push_back(tx);
+        Ok(())
     }
 
-    pub fn apply(&mut self, tx: &Tx, block_hash: Hash) -> Result<(), String> {
+    pub fn apply(&mut self, tx: &Tx, block_hash: Hash) -> Result<(), StateError> {
         if tx.is_reward() {
             // println!("is_reward_yes");
             *self.balances.entry(tx.to.clone()).or_insert(0) += tx.value;
         }
 
         //Check if 'from' account has sufficient balance
-        if tx.value > *self.balances.get(&tx.from).unwrap_or(&0) {
-            return Err("insufficient value".to_string());
+        let from_balance = self.balances.get(&tx.from).copied().unwrap_or(0);
+        if tx.value > from_balance {
+            // return Err("insufficient value".to_string());
+            return Err(StateError::InsufficientBalance {
+                account: tx.from.clone().0,
+                requested: tx.value,
+                available: from_balance,
+            });
         }
 
         //Effect change
-        *self.balances.get_mut(&tx.from).unwrap() -= tx.value; //handle error here, if the account does not exist, throw Error
+        *self
+            .balances
+            .get_mut(&tx.from)
+            .expect("from account missing") -= tx.value; //don't expect this to fail though since the Tx would always exist
 
-        //If the 'to' account does not exist, create it with initial balance 0
-        if !self.balances.contains_key(&tx.to) {
-            self.balances.insert(tx.to.clone(), 0);
-        }
-
+        //If the 'to' account does not exist, create it with initial balance 0(the .or_insert(0) does that)
         //Effect change
-        *self.balances.get_mut(&tx.to).unwrap() += tx.value; //handle error here, if the account does not exist, throw Error
+        *self.balances.entry(tx.to.clone()).or_insert(0) += tx.value; //handle error here, if the account does not exist, throw Error
 
         self.latest_blockhash = block_hash;
         Ok(())
     }
 
-    pub fn new_from_disk() -> Result<State, Box<dyn Error>> {
+    pub fn new_from_disk() -> Result<State, StateError> {
         //get current working directory
-        let cwd = current_dir().expect("Failed to get current directory");
+        let cwd = current_dir()?;
         let gen_file_path = cwd.join("database/src/genesis.json");
 
         let gen_data = fs::read_to_string(gen_file_path)?;
@@ -138,9 +138,7 @@ impl State {
             balances.insert(Account(key), value);
         }
 
-        let tx_db_file_path = current_dir()
-            .expect("Failed to get current directory")
-            .join("database/src/blocks.db");
+        let tx_db_file_path = current_dir()?.join("database/src/blocks.db");
         let file = OpenOptions::new()
             .read(true)
             .append(true)
@@ -156,11 +154,11 @@ impl State {
         };
 
         for line_result in reader.lines() {
-            let line = line_result.unwrap();
-            let block_record: BlockRecord = serde_json::from_str(&line).unwrap();
+            let line = line_result?;
+            let block_record: BlockRecord = serde_json::from_str(&line)?;
             //Apply transaction to rebuild the balances
             for tx in &block_record.block.txs {
-                state.apply(&tx, State::hex_to_hash(&block_record.blockhash))?;
+                state.apply(&tx, State::hex_to_hash(&block_record.blockhash)?)?;
             }
         }
 
@@ -168,7 +166,7 @@ impl State {
     }
 
     /// ADD/FLUSH TO DISK
-    pub fn persist(&mut self) -> Hash {
+    pub fn persist(&mut self) -> Result<Hash, StateError> {
         let block = Block::new(self.latest_blockhash, self.tx_mempool.borrow().clone());
         let blockhash = block.hash();
 
@@ -176,30 +174,34 @@ impl State {
             blockhash: blockhash.to_hex(),
             block,
         };
-        let block_json = serde_json::to_string(&block_record).unwrap();
+        let block_json = serde_json::to_string(&block_record)?;
 
         let mut writer = BufWriter::new(&self.db_file);
-        writeln!(writer, "{}", block_json).unwrap();
+        writeln!(writer, "{}", block_json)?;
 
         self.latest_blockhash = blockhash;
         self.tx_mempool = Rc::new(RefCell::new(VecDeque::new()));
 
-        blockhash
+        Ok(blockhash)
     }
 
     pub fn hash_to_hex(&self) -> String {
         hex::encode(&self.latest_blockhash)
     }
 
-    pub fn hex_to_hash(hex_str: &str) -> Hash {
-        let bytes = hex::decode(hex_str).expect("Invalid hex");
-        let arr: [u8; 32] = bytes.as_slice().try_into().expect("Expected 32 bytes");
-        Hash(arr)
+    pub fn hex_to_hash(hex_str: &str) -> Result<Hash, StateError> {
+        let bytes = hex::decode(hex_str)?;
+        let arr: [u8; 32] = bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| StateError::InvalidLength(bytes.len()))?;
+        Ok(Hash(arr))
     }
 
-    pub fn add_block(&mut self, block: Block) {
+    pub fn add_block(&mut self, block: Block) -> Result<(), StateError> {
         for tx in block.txs {
-            self.add(tx);
+            self.add(tx)?;
         }
+        Ok(())
     }
 }

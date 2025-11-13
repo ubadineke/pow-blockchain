@@ -1,7 +1,7 @@
-use node::State;
+use node::{State, error::StateError};
 
 use crate::BalancesSubcommand;
-pub fn manage_balances(command: BalancesSubcommand) {
+pub fn manage_balances(command: BalancesSubcommand) -> Result<(), StateError> {
     match command {
         BalancesSubcommand::List => {
             let state = State::new_from_disk().unwrap();
@@ -11,6 +11,7 @@ pub fn manage_balances(command: BalancesSubcommand) {
             for (key, value) in state.balances {
                 println!("{}: {}", key.0, value)
             }
+            Ok(())
         }
     }
 }

@@ -54,11 +54,12 @@ pub struct AddArgs {
     pub data: Option<String>,
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Balances { command } => manage_balances(command),
-        Commands::Tx { command } => manage_txs(command),
+        Commands::Balances { command } => manage_balances(command)?,
+        Commands::Tx { command } => manage_txs(command)?,
     }
+    Ok(())
 }

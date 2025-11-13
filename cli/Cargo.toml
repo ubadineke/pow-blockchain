@@ -7,4 +7,5 @@ resolver = "1"
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 node = {path = "/home/ubadineke/pow-blockchain/node"}
+thiserror = {workspace = true}
 

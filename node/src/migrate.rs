@@ -1,8 +1,8 @@
+use crate::{Hash, State, Tx, block::Block, error::StateError};
 use std::collections::VecDeque;
-use crate::{Hash, State, Tx, block::Block};
 
 //SIMPLE SETUP FOR MIGRATING FROM TX.DB TO BLOCKS.DB
-pub fn migrate_db() {
+pub fn migrate_db() -> Result<(), StateError> {
     let mut state = State::new_from_disk().unwrap();
 
     let block0 = Block::new(
@@ -12,8 +12,8 @@ pub fn migrate_db() {
             Tx::new("clement".into(), "clement".into(), 700, "reward".into()),
         ]),
     );
-    state.add_block(block0);
-    let block0_hash = state.persist();
+    state.add_block(block0)?;
+    let block0_hash = state.persist()?;
     println!("Block 0 hash: {}", &block0_hash.to_hex());
 
     let block1 = Block::new(
@@ -27,7 +27,9 @@ pub fn migrate_db() {
             Tx::new("clement".into(), "clement".into(), 600, "reward".into()),
         ]),
     );
-    state.add_block(block1);
+    state.add_block(block1)?;
     let block1_hash = state.persist();
-    println!("Block 1 hash: {}", &block1_hash.to_hex())
+    println!("Block 1 hash: {}", &block1_hash?.to_hex());
+
+    Ok(())
 }
