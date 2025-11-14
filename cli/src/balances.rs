@@ -4,7 +4,7 @@ use crate::BalancesSubcommand;
 pub fn manage_balances(command: BalancesSubcommand) -> Result<(), StateError> {
     match command {
         BalancesSubcommand::List => {
-            let state = State::new_from_disk().unwrap();
+            let state = State::new_from_disk()?;
             println!("Account balances at {} \n", state.latest_blockhash.to_hex());
             println!("BALANCES:");
             println!("_________________");

@@ -1,7 +1,9 @@
 use balances::manage_balances;
 use clap::{Parser, Subcommand};
+use run::run_node;
 use tx::manage_txs;
 pub mod balances;
+pub mod run;
 pub mod tx;
 
 #[derive(Parser, Debug)]
@@ -25,6 +27,9 @@ enum Commands {
         #[command(subcommand)]
         command: TxSubcommand,
     },
+
+    /// Run the node
+    Run,
 }
 
 #[derive(Subcommand, Debug)]
@@ -54,12 +59,14 @@ pub struct AddArgs {
     pub data: Option<String>,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
         Commands::Balances { command } => manage_balances(command)?,
         Commands::Tx { command } => manage_txs(command)?,
+        Commands::Run => run_node().await?,
     }
     Ok(())
 }

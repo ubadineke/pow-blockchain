@@ -13,7 +13,7 @@ pub fn manage_txs(command: TxSubcommand) -> Result<(), StateError> {
             } = args;
 
             //Add to In-Memory Mempool
-            let mut state = State::new_from_disk().unwrap();
+            let mut state = State::new_from_disk()?;
             let tx = Tx::new(from, to, value, data.unwrap_or("".to_string()));
             state.add(tx)?;
 

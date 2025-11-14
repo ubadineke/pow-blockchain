@@ -3,10 +3,11 @@ use std::{
     fs::{self, File},
     path::{Path, PathBuf},
 };
+use crate::error::DBError;
 pub struct DataDir {}
 
 impl DataDir {
-    pub fn init() -> PathBuf {
+    pub fn init() -> Result<PathBuf, DBError> {
         //Intended Directory: /home/<username>/.ubachain/database
 
         //Use path specified in ENV if provided, else use default setup.
@@ -17,9 +18,9 @@ impl DataDir {
                 //Create path if not existing
                 if !path.exists() {
                     println!("Path provided in ENV not existing, creating ...");
-                    fs::create_dir_all(path).unwrap();
+                    fs::create_dir_all(path)?;
                 }
-                DataDir::create_starter_files(&path); //add required Files
+                DataDir::create_starter_files(&path)?; //add required Files
                 path.to_path_buf()
             }
             Err(_) => {
@@ -30,25 +31,27 @@ impl DataDir {
                 let default_path = home_dir.join(".ubachain/database");
                 if !default_path.exists() {
                     println!("Default path doesn't exist, creating...");
-                    fs::create_dir_all(&default_path).unwrap();
-                    DataDir::create_starter_files(&default_path); //add required Files
+                    fs::create_dir_all(&default_path)?;
+                    DataDir::create_starter_files(&default_path)?; //add required Files
                 }
                 default_path
             }
         };
-        path
+        Ok(path)
     }
 
-    fn create_starter_files(dir: &Path) {
+    fn create_starter_files(dir: &Path) -> Result<(), DBError>{
         //genesis.json - copy/write from file in the repo.
         let gen_file_path = current_dir()
             .expect("Failed to get current directory")
             .join("database/src/genesis.json");
         let source = gen_file_path.as_path();
         let destination = dir.join("genesis.json");
-        fs::copy(source, destination).unwrap();
+        fs::copy(source, destination)?;
 
         //blocks.db - fresh file
-        File::create(dir.join("blocks.db")).unwrap();
+        File::create(dir.join("blocks.db"))?;
+        Ok(())
     }
 }
+

@@ -167,8 +167,8 @@ impl State {
 
     /// ADD/FLUSH TO DISK
     pub fn persist(&mut self) -> Result<Hash, StateError> {
-        let block = Block::new(self.latest_blockhash, self.tx_mempool.borrow().clone());
-        let blockhash = block.hash();
+        let block = Block::new(self.latest_blockhash, self.tx_mempool.borrow().clone())?;
+        let blockhash = block.hash()?;
 
         let block_record = BlockRecord {
             blockhash: blockhash.to_hex(),

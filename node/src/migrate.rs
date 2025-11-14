@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 
 //SIMPLE SETUP FOR MIGRATING FROM TX.DB TO BLOCKS.DB
 pub fn migrate_db() -> Result<(), StateError> {
-    let mut state = State::new_from_disk().unwrap();
+    let mut state = State::new_from_disk()?;
 
     let block0 = Block::new(
         Hash([0u8; 32]),
@@ -11,7 +11,7 @@ pub fn migrate_db() -> Result<(), StateError> {
             Tx::new("clement".into(), "clement".into(), 3, "".into()),
             Tx::new("clement".into(), "clement".into(), 700, "reward".into()),
         ]),
-    );
+    )?;
     state.add_block(block0)?;
     let block0_hash = state.persist()?;
     println!("Block 0 hash: {}", &block0_hash.to_hex());
@@ -26,7 +26,7 @@ pub fn migrate_db() -> Result<(), StateError> {
             Tx::new("uba".into(), "clement".into(), 50, "".into()),
             Tx::new("clement".into(), "clement".into(), 600, "reward".into()),
         ]),
-    );
+    )?;
     state.add_block(block1)?;
     let block1_hash = state.persist();
     println!("Block 1 hash: {}", &block1_hash?.to_hex());

@@ -2,11 +2,9 @@ use std::{
     collections::VecDeque,
     time::{SystemTime, UNIX_EPOCH},
 };
-
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-
-use crate::{Hash, Tx};
+use crate::{error::StateError, Hash, Tx};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BlockHeader {
@@ -29,21 +27,21 @@ pub struct BlockRecord {
 }
 
 impl Block {
-    pub fn new(latest_blockhash: Hash, txs: VecDeque<Tx>) -> Self {
-        let time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    pub fn new(latest_blockhash: Hash, txs: VecDeque<Tx>) -> Result<Self, StateError> {
+        let time = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let unix_timestamp = time.as_secs();
 
         let header = BlockHeader {
             parent: latest_blockhash,
             time: unix_timestamp,
         };
-        Self { header, txs }
+        Ok(Self { header, txs })
     }
 
-    pub fn hash(&self) -> Hash {
-        let block_json = serde_json::to_string(&self).unwrap();
+    pub fn hash(&self) -> Result<Hash, StateError> {
+        let block_json = serde_json::to_string(&self)?;
         let bytes = Block::compute_hash(&block_json.as_bytes());
-        Hash::from(bytes)
+        Ok(Hash::from(bytes))
     }
 
     fn compute_hash(data: &[u8]) -> [u8; 32] {

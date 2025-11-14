@@ -1,3 +1,5 @@
+use std::time::SystemTimeError;
+
 // Define a custom error type
 #[derive(Debug)]
 pub enum GenesisError {
@@ -39,6 +41,9 @@ pub enum StateError {
 
     #[error("expected 32 bytes but got {0}")]
     InvalidLength(usize),
+
+    #[error("Error from system time: {0}")]
+    SystemTime(SystemTimeError)
 }
 
 impl From<std::io::Error> for StateError {
@@ -59,6 +64,12 @@ impl From<hex::FromHexError> for StateError {
     }
 }
 
+impl From<SystemTimeError> for StateError{
+  fn from(value: SystemTimeError) -> Self {
+      StateError::SystemTime(value)
+  }
+}
+
 //WOULD TRY THIS OUT AFTER SEEEING WHAT THE BOX ERROR CCAN OFFER
 // #[derive(Debug, thiserror::Error)]
 // pub enum CliError {
@@ -68,3 +79,5 @@ impl From<hex::FromHexError> for StateError {
 //     #[error(transparent)]
 //     Genesis(#[from] GenesisError),
 // }
+
+
