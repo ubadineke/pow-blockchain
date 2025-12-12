@@ -40,7 +40,7 @@ impl Tx {
     }
 }
 
-#[derive(Serialize, Deserialize, Copy, Clone, Debug)]
+#[derive(Serialize, Deserialize, Copy, Clone, Debug, PartialEq)]
 pub struct Hash(pub [u8; 32]);
 
 impl AsRef<[u8]> for Hash {
@@ -65,6 +65,7 @@ pub struct State {
     pub tx_mempool: Rc<RefCell<VecDeque<Tx>>>,
     pub db_file: File,
     pub latest_blockhash: Hash,
+    pub current_block_height: u64
 }
 
 #[derive(Deserialize)]
@@ -87,12 +88,12 @@ impl Genesis {
 
 impl State {
     pub fn add(&mut self, tx: Tx) -> Result<(), StateError> {
-        self.apply(&tx, self.latest_blockhash)?;
+        self.apply(&tx, self.latest_blockhash, self.current_block_height)?;
         self.tx_mempool.borrow_mut().push_back(tx);
         Ok(())
     }
 
-    pub fn apply(&mut self, tx: &Tx, block_hash: Hash) -> Result<(), StateError> {
+    pub fn apply(&mut self, tx: &Tx, block_hash: Hash, block_height: u64) -> Result<(), StateError> {
         if tx.is_reward() {
             // println!("is_reward_yes");
             *self.balances.entry(tx.to.clone()).or_insert(0) += tx.value;
@@ -120,6 +121,7 @@ impl State {
         *self.balances.entry(tx.to.clone()).or_insert(0) += tx.value; //handle error here, if the account does not exist, throw Error
 
         self.latest_blockhash = block_hash;
+        self.current_block_height = block_height;
         Ok(())
     }
 
@@ -151,6 +153,7 @@ impl State {
             tx_mempool: Rc::new(RefCell::new(VecDeque::new())),
             db_file: file,
             latest_blockhash: Hash::from([0u8; 32]),
+            current_block_height: 0u64
         };
 
         for line_result in reader.lines() {
@@ -158,7 +161,7 @@ impl State {
             let block_record: BlockRecord = serde_json::from_str(&line)?;
             //Apply transaction to rebuild the balances
             for tx in &block_record.block.txs {
-                state.apply(&tx, State::hex_to_hash(&block_record.blockhash)?)?;
+                state.apply(&tx, State::hex_to_hash(&block_record.blockhash)?, block_record.block.header.height)?;
             }
         }
 
@@ -167,7 +170,14 @@ impl State {
 
     /// ADD/FLUSH TO DISK
     pub fn persist(&mut self) -> Result<Hash, StateError> {
-        let block = Block::new(self.latest_blockhash, self.tx_mempool.borrow().clone())?;
+       
+        //If FIRST BLOCK, do not increment block height, use 0
+        let mut new_block_height = self.current_block_height;
+        if self.latest_blockhash != Hash::from([0u8; 32]) {
+            new_block_height = self.current_block_height + 1;
+        }
+        
+        let block = Block::new(self.latest_blockhash, self.tx_mempool.borrow().clone(), new_block_height)?;
         let blockhash = block.hash()?;
 
         let block_record = BlockRecord {

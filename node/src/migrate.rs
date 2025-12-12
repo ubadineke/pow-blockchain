@@ -11,11 +11,12 @@ pub fn migrate_db() -> Result<(), StateError> {
             Tx::new("clement".into(), "clement".into(), 3, "".into()),
             Tx::new("clement".into(), "clement".into(), 700, "reward".into()),
         ]),
+        0
     )?;
     state.add_block(block0)?;
     let block0_hash = state.persist()?;
     println!("Block 0 hash: {}", &block0_hash.to_hex());
-
+    
     let block1 = Block::new(
         block0_hash,
         VecDeque::from(vec![
@@ -26,6 +27,7 @@ pub fn migrate_db() -> Result<(), StateError> {
             Tx::new("uba".into(), "clement".into(), 50, "".into()),
             Tx::new("clement".into(), "clement".into(), 600, "reward".into()),
         ]),
+        1
     )?;
     state.add_block(block1)?;
     let block1_hash = state.persist();

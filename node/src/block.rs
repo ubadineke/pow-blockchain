@@ -9,6 +9,7 @@ use crate::{error::StateError, Hash, Tx};
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BlockHeader {
     pub parent: Hash,
+    pub height: u64,
     pub time: u64,
 }
 
@@ -27,12 +28,13 @@ pub struct BlockRecord {
 }
 
 impl Block {
-    pub fn new(latest_blockhash: Hash, txs: VecDeque<Tx>) -> Result<Self, StateError> {
+    pub fn new(latest_blockhash: Hash, txs: VecDeque<Tx>, block_height: u64) -> Result<Self, StateError> {
         let time = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let unix_timestamp = time.as_secs();
 
         let header = BlockHeader {
             parent: latest_blockhash,
+            height: block_height,
             time: unix_timestamp,
         };
         Ok(Self { header, txs })
